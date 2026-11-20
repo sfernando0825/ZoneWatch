@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Xcode (the project is generated from ios/project.yml by XcodeGen)
+ios/*.xcodeproj/
+ios/*.xcworkspace/
+xcuserdata/
+DerivedData/
+build/
+*.xcuserstate
+.swiftpm/
+.build/
+
+# Python (pipeline)
+__pycache__/
+*.pyc
+.venv/
+
+# Node / Cloudflare (api)
+node_modules/
+.wrangler/
+.dev.vars
+
+# Secrets: never commit these. This repository is public.
+.env
+.env.*
+*.p8
+*.p12
+*.mobileprovision
+signing-key*
