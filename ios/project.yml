@@ -26,6 +26,9 @@ targets:
     platform: iOS
     sources:
       - ZoneWatch
+      # Replay with Debug > Simulate Location in Xcode; not bundled in the app.
+      - path: TestRoutes
+        buildPhase: none
     dependencies:
       - package: ZoneWatchKit
       - target: ZoneWatchLiveActivity
@@ -45,6 +48,9 @@ targets:
           - location
           - audio
         NSSupportsLiveActivities: true
+        # Drive logs and GPX tracks appear in the Files app for the Phase 1 drive tests.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         NSLocationWhenInUseUsageDescription: ZoneWatch uses your location to warn you of speed cameras ahead while you drive.
         NSLocationAlwaysAndWhenInUseUsageDescription: ZoneWatch warns you of speed cameras while driving, including when your screen is locked or another app is open.
         NSMotionUsageDescription: ZoneWatch uses motion activity to detect when you start driving, so camera alerts turn on without you touching the phone.

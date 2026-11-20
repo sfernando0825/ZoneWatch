@@ -35,6 +35,23 @@ xcodebuild -project ios/ZoneWatch.xcodeproj -scheme ZoneWatch \
   -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
 
+### Simulated drive (Phase 1 proof of concept)
+
+The test cameras in `PrototypeCameras` are made-up points along an approximate Anzac Highway route, not real cameras.
+
+```bash
+# After installing the app on a booted simulator ($DEV = its UDID)
+xcrun simctl privacy $DEV grant location-always com.zonewatch.app
+xcrun simctl launch $DEV com.zonewatch.app -ZWStartTestDrive YES   # starts a drive without motion data
+# Waypoints go through stdin ('-'): negative latitudes on the command line are read as options.
+printf '%s\n' -34.9365,138.5900 -34.9440,138.5790 -34.9510,138.5690 -34.9560,138.5600 \
+  -34.9620,138.5500 -34.9690,138.5390 -34.9760,138.5270 -34.9800,138.5160 \
+  | xcrun simctl location $DEV start --speed=30 --interval=1 -
+# Drive log: $(xcrun simctl get_app_container $DEV com.zonewatch.app data)/Documents/Drives/
+```
+
+In Xcode, `ios/TestRoutes/AnzacHighwayToGlenelg.gpx` replays the same route at 60 km/h (Debug > Simulate Location). Expected alerts towards Glenelg: test points 1, 2, 4, 5, 6 (3 is city-bound only).
+
 ## Conventions
 
 - Swift 6 language mode, strict concurrency. iOS 17 minimum; CarPlay Live Activity features need iOS 26 and go behind `#available`.
