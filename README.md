@@ -26,6 +26,13 @@ Run the package tests:
 swift test --package-path ios/ZoneWatchKit
 ```
 
+The camera dataset pipeline has its own README in `pipeline/`.
+
+## Data sources
+
+- Camera sites: Expiation Notice System data, South Australia Police, via data.sa.gov.au (CC BY).
+- Roads and suburbs: Location SA, Department for Infrastructure and Transport (CC BY 3.0 AU).
+
 ## Status
 
-Phase 0 (setup). Not released. Only the developer and 3 to 4 private testers will use it until the app is complete.
+Phase 2 (camera data). Not released. Only the developer and 3 to 4 private testers will use it until the app is complete.

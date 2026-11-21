@@ -17,7 +17,8 @@ ZoneWatch is an iOS + CarPlay speed camera alert app for Australian drivers, lau
 - `ios/ZoneWatch/`: app target (SwiftUI).
 - `ios/ZoneWatchLiveActivity/`: widget extension for the Live Activity (Lock Screen, Dynamic Island, CarPlay Dashboard).
 - `ios/ZoneWatchKit/`: Swift package with all logic that can be tested without a device (alert engine, camera store, models). Keep the app targets thin.
-- `pipeline/`: Python, SA dataset ingest (Phase 2).
+- `pipeline/`: Python (stdlib + `cryptography`), builds the signed SA camera dataset daily via `.github/workflows/dataset.yml` (Phase 2).
+- `ios/ZoneWatch/Resources/sa-cameras.json(.sig)`: the dataset snapshot built into the app.
 - `api/`: TypeScript Cloudflare Worker with Hono and D1 (Phase 4).
 - `site/`: static site on Cloudflare Pages (Phase 6).
 
@@ -35,22 +36,31 @@ xcodebuild -project ios/ZoneWatch.xcodeproj -scheme ZoneWatch \
   -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
 
-### Simulated drive (Phase 1 proof of concept)
+### Camera dataset (Phase 2)
 
-The test cameras in `PrototypeCameras` are made-up points along an approximate Anzac Highway route, not real cameras.
+```bash
+cd pipeline
+.venv/bin/python -m unittest discover -s tests -t .
+.venv/bin/python -m zonewatch_pipeline build --out build --key ~/.config/zonewatch/dataset-signing-key.pem
+cp build/sa-cameras.json build/sa-cameras.json.sig ../ios/ZoneWatch/Resources/   # refresh the app's built-in snapshot
+```
+
+The venv uses Xcode's Python 3.9 (`/usr/bin/python3 -m venv .venv`) because Homebrew's Python 3.14 has a broken expat on this Mac. Read `build/build-report.md` after a build for sites that weren't placed. The private signing key never goes in the repo; the app holds the public key in `DatasetSignature.publicKey`.
+
+### Simulated drives
 
 ```bash
 # After installing the app on a booted simulator ($DEV = its UDID)
 xcrun simctl privacy $DEV grant location-always com.zonewatch.app
 xcrun simctl launch $DEV com.zonewatch.app -ZWStartTestDrive YES   # starts a drive without motion data
 # Waypoints go through stdin ('-'): negative latitudes on the command line are read as options.
-printf '%s\n' -34.9365,138.5900 -34.9440,138.5790 -34.9510,138.5690 -34.9560,138.5600 \
-  -34.9620,138.5500 -34.9690,138.5390 -34.9760,138.5270 -34.9800,138.5160 \
-  | xcrun simctl location $DEV start --speed=30 --interval=1 -
+xcrun simctl location $DEV start --speed=30 --interval=1 - < ios/TestRoutes/GreenhillAnzacToGlenelg.txt
 # Drive log: $(xcrun simctl get_app_container $DEV com.zonewatch.app data)/Documents/Drives/
 ```
 
-In Xcode, `ios/TestRoutes/AnzacHighwayToGlenelg.gpx` replays the same route at 60 km/h (Debug > Simulate Location). Expected alerts towards Glenelg: test points 1, 2, 4, 5, 6 (3 is city-bound only).
+`GreenhillAnzacToGlenelg.txt` follows the real road (from the SA Roads map), Greenhill Road west then Anzac Highway to Glenelg, with the real dataset. Expected: red light cameras at Greenhill Rd & Anzac Hwy, Anzac Hwy & Marion Rd and Anzac Hwy & Cross Rd, and one mobile camera site zone for Anzac Highway; no alerts for the cross streets.
+
+The Phase 1 made-up test points (`PrototypeCameras`) still work: add `-ZWPrototypeCameras YES` to the launch and replay `ios/TestRoutes/AnzacHighwayToGlenelg.gpx` in Xcode (Debug > Simulate Location). Expected towards Glenelg: test points 1, 2, 4, 5, 6.
 
 ## Conventions
 

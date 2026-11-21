@@ -33,3 +33,15 @@ struct AlertStatusTests {
         #expect(try JSONDecoder().decode(AlertStatus.self, from: data) == status)
     }
 }
+
+@Suite("Alert status in a zone")
+struct AlertStatusZoneTests {
+    @Test("Inside a zone the headline names the zone and no distance is shown")
+    func zone() {
+        let status = AlertStatus(phase: .cameraAhead, cameraType: .mobileSpeed, road: "Port Road", distanceMeters: 0, inZone: true)
+        #expect(status.headline == "Mobile camera site")
+        #expect(status.distanceText == nil)
+        let over = AlertStatus(phase: .overLimit, cameraType: .averageSpeedSection, inZone: true)
+        #expect(over.headline == "Check your speed: average speed zone")
+    }
+}

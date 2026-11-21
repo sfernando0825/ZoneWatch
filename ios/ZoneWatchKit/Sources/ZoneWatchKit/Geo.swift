@@ -49,3 +49,32 @@ extension Double {
     var radians: Double { self * .pi / 180 }
     var degrees: Double { self * 180 / .pi }
 }
+
+extension Geo {
+    /// Nearest point of a polyline to `point`: the distance in metres and the bearing of that
+    /// stretch of line in its drawn direction, and whether that nearest point is one of the line's two
+    /// ends (the point lies beyond the line rather than beside it). Uses a flat projection around `point`.
+    public static func nearest(on line: [Coordinate], to point: Coordinate) -> (distance: Double, bearing: Double, atEnd: Bool)? {
+        guard line.count >= 2 else { return nil }
+        let kx = cos(point.latitude.radians) * earthRadius * .pi / 180
+        let ky = earthRadius * .pi / 180
+        func xy(_ c: Coordinate) -> (Double, Double) {
+            ((c.longitude - point.longitude) * kx, (c.latitude - point.latitude) * ky)
+        }
+        var best: (distance: Double, bearing: Double, atEnd: Bool)?
+        var previous = xy(line[0])
+        for index in 1..<line.count {
+            let current = xy(line[index])
+            let dx = current.0 - previous.0, dy = current.1 - previous.1
+            let length2 = dx * dx + dy * dy
+            let t = length2 == 0 ? 0 : max(0, min(1, -(previous.0 * dx + previous.1 * dy) / length2))
+            let distance = hypot(previous.0 + t * dx, previous.1 + t * dy)
+            if length2 > 0, best == nil || distance < best!.distance {
+                let atEnd = (index == 1 && t == 0) || (index == line.count - 1 && t == 1)
+                best = (distance, normalized(atan2(dx, dy).degrees), atEnd)
+            }
+            previous = current
+        }
+        return best
+    }
+}

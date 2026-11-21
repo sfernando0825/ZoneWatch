@@ -2,8 +2,8 @@ import CoreLocation
 import Observation
 import ZoneWatchKit
 
-/// Ties the Phase 1 pieces together: a detected drive starts tracking, each location goes through the
-/// proximity trigger, an approach plays the alarm and updates the Live Activity, and the drive is recorded.
+/// Ties the pieces together: a detected drive starts tracking, each location goes through the point
+/// camera and zone triggers, an alert plays the alarm and updates the Live Activity, and the drive is recorded.
 @MainActor
 @Observable
 final class MonitoringCoordinator {
@@ -14,11 +14,13 @@ final class MonitoringCoordinator {
     let audio = AudioAlerts()
     let liveActivity = LiveActivityController()
     let recorder = DriveRecorder()
+    let cameras = CameraData()
 
     private(set) var status = AlertStatus.monitoring
     private(set) var speedKmh: Double?
 
-    @ObservationIgnored private var trigger = ProximityTrigger(cameras: PrototypeCameras.adelaideTest)
+    @ObservationIgnored private var trigger = ProximityTrigger(cameras: [])
+    @ObservationIgnored private var zoneTrigger = ZoneTrigger(zones: [])
     @ObservationIgnored private var estimator = MotionEstimator()
     @ObservationIgnored private var booted = false
 
@@ -29,6 +31,7 @@ final class MonitoringCoordinator {
         guard !booted else { return }
         booted = true
 
+        cameras.load()
         location.onLocation = { [weak self] location in self?.handle(location) }
         drive.onChange = { [weak self] driving in
             if driving { self?.driveStarted() } else { self?.driveEnded() }
@@ -37,6 +40,10 @@ final class MonitoringCoordinator {
         liveActivity.adoptExisting()
         location.startWakeMonitoring()
         recorder.log(launchedForLocation ? "Relaunched by iOS for a location event" : "App launched")
+        if let dataset = cameras.dataset {
+            recorder.log("Cameras: \(cameras.source) dataset \(dataset.version), \(dataset.cameras.count) points, \(dataset.zones.count) zones")
+        }
+        if let error = cameras.lastError { recorder.log("Camera data: \(error)") }
         Task { await audio.prepare() }
 
         // Automated simulator tests: launch with `-ZWStartTestDrive YES`.
@@ -60,7 +67,11 @@ final class MonitoringCoordinator {
 
     private func driveStarted() {
         recorder.begin()
-        trigger = ProximityTrigger(cameras: PrototypeCameras.adelaideTest)
+        let set = cameras.alertSet()
+        trigger = ProximityTrigger(cameras: set.cameras)
+        zoneTrigger = ZoneTrigger(zones: set.zones)
+        recorder.log("Watching \(set.cameras.count) cameras and \(set.zones.count) zones"
+            + (cameras.usePrototypeCameras ? " (prototype test points)" : ""))
         estimator = MotionEstimator()
         status = .monitoring
         location.startTracking()
@@ -104,22 +115,50 @@ final class MonitoringCoordinator {
                 recorder.log("Passed \(camera.road)")
             }
         }
+        for event in zoneTrigger.update(with: fix) {
+            switch event {
+            case let .approaching(zone, distance):
+                audio.play(.forCamera(zone.type))
+                recorder.log("Alert: \(zone.type.zoneName) starts in \(Int(distance)) m, \(zone.road)\(zone.suburb.map { ", \($0)" } ?? "")")
+                if let error = audio.lastError { recorder.log("Audio: \(error)") }
+            case let .entered(zone):
+                audio.play(.forCamera(zone.type))
+                recorder.log("Alert: joined \(zone.type.zoneName), \(zone.road)\(zone.suburb.map { ", \($0)" } ?? "")")
+                if let error = audio.lastError { recorder.log("Audio: \(error)") }
+            case let .left(zone):
+                recorder.log("Left \(zone.type.zoneName), \(zone.road)")
+            }
+        }
 
         status = currentStatus(for: fix)
         liveActivity.update(status)
     }
 
+    /// A point camera or zone start ahead wins over a zone the vehicle is already in, nearest first.
     private func currentStatus(for fix: VehicleFix) -> AlertStatus {
-        guard let active = trigger.nearestActive(from: fix) else { return .monitoring }
-        let camera = active.camera
-        let overLimit = camera.speedLimitKmh.map { Double($0) < (speedKmh ?? 0) } ?? false
+        let point = trigger.nearestActive(from: fix)
+        let zone = zoneTrigger.current(from: fix)
+        let overLimit: (Int?) -> Bool = { limit in limit.map { Double($0) < (self.speedKmh ?? 0) } ?? false }
+
+        if let point, zone == nil || zone!.inside || point.distance <= zone!.distance {
+            let camera = point.camera
+            return AlertStatus(
+                phase: overLimit(camera.speedLimitKmh) ? .overLimit : .cameraAhead,
+                cameraType: camera.type,
+                road: camera.road,
+                // Rounded so the Live Activity only updates when the shown distance changes.
+                distanceMeters: (point.distance / 50).rounded() * 50,
+                speedLimitKmh: camera.speedLimitKmh
+            )
+        }
+        guard let zone else { return .monitoring }
         return AlertStatus(
-            phase: overLimit ? .overLimit : .cameraAhead,
-            cameraType: camera.type,
-            road: camera.road,
-            // Rounded so the Live Activity only updates when the shown distance changes.
-            distanceMeters: (active.distance / 50).rounded() * 50,
-            speedLimitKmh: camera.speedLimitKmh
+            phase: overLimit(zone.zone.speedLimitKmh) ? .overLimit : .cameraAhead,
+            cameraType: zone.zone.type,
+            road: zone.zone.road,
+            distanceMeters: zone.inside ? nil : (zone.distance / 50).rounded() * 50,
+            speedLimitKmh: zone.zone.speedLimitKmh,
+            inZone: zone.inside ? true : nil
         )
     }
 }

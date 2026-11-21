@@ -1,0 +1,87 @@
+name: Camera dataset
+
+# Builds the South Australia camera dataset from open government data every morning (Adelaide time).
+# Signing and publishing only happen when the ZW_SIGNING_KEY secret exists; without it the job still
+# builds, validates and uploads the dataset as a workflow artifact.
+
+on:
+  schedule:
+    - cron: "30 19 * * *" # 06:00 ACDT / 05:00 ACST
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["pipeline/**", ".github/workflows/dataset.yml"]
+  pull_request:
+    paths: ["pipeline/**", ".github/workflows/dataset.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: camera-dataset
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pipeline
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -t .
+
+  build:
+    needs: test
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: pipeline
+    env:
+      RELEASE_TAG: dataset-sa
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Month for the map cache
+        id: month
+        run: echo "value=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+      - name: Cache road and suburb maps (refreshed monthly)
+        uses: actions/cache@v4
+        with:
+          path: pipeline/.cache/maps
+          key: maps-${{ steps.month.outputs.value }}
+      - name: Previous published dataset
+        run: |
+          mkdir -p previous
+          gh release download "$RELEASE_TAG" --dir previous --pattern 'sa-cameras.*' || echo "nothing published yet"
+      - name: Build
+        env:
+          ZW_SIGNING_KEY: ${{ secrets.ZW_SIGNING_KEY }}
+        run: python -m zonewatch_pipeline build --out build --previous previous/sa-cameras.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sa-cameras
+          path: pipeline/build/
+      - name: Publish when the data changed
+        env:
+          HAS_KEY: ${{ secrets.ZW_SIGNING_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" != "true" ]; then echo "No signing key secret: not publishing."; exit 0; fi
+          if [ -f previous/sa-cameras.sha256 ] && cmp -s previous/sa-cameras.sha256 build/sa-cameras.sha256; then
+            echo "No change since the last published dataset."; exit 0
+          fi
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" --title "SA camera dataset" --prerelease \
+              --notes "Signed camera dataset for the ZoneWatch app, rebuilt daily from open government data. See pipeline/README.md."
+          gh release upload "$RELEASE_TAG" build/sa-cameras.json build/sa-cameras.json.sig build/sa-cameras.sha256 build/build-report.md --clobber

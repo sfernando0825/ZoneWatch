@@ -10,6 +10,7 @@ struct ContentView: View {
         NavigationStack {
             List {
                 statusSection
+                cameraDataSection
                 driveSection
                 permissionsSection
                 audioSection
@@ -33,8 +34,32 @@ struct ContentView: View {
             }
             .padding(.vertical, 4)
             LabeledContent("Speed", value: coordinator.speedKmh.map { "\(Int($0)) km/h" } ?? "–")
+        }
+    }
+
+    private var cameraDataSection: some View {
+        @Bindable var cameras = coordinator.cameras
+        return Section {
+            if let dataset = cameras.dataset {
+                LabeledContent("Dataset", value: "\(dataset.version) (\(cameras.source))")
+                LabeledContent("Data up to", value: dataset.dataThrough ?? "–")
+                LabeledContent("Camera points", value: "\(dataset.cameras.count)")
+                LabeledContent("Camera zones", value: "\(dataset.zones.count)")
+            } else {
+                Text("No camera data loaded").foregroundStyle(.red)
+            }
+            Toggle("Mobile camera sites", isOn: $cameras.includeMobile)
+            if cameras.usePrototypeCameras {
+                Text("Using the made-up Phase 1 test points").foregroundStyle(.orange)
+            }
+            if let error = cameras.lastError {
+                Text(error).foregroundStyle(.red)
+            }
+        } header: {
+            Text("Cameras")
         } footer: {
-            Text("Phase 1 uses 10 made-up test points along Anzac Highway, not real camera locations.")
+            Text((cameras.dataset?.attribution ?? []).joined(separator: "\n")
+                + "\nCamera positions are worked out automatically from published site descriptions and may be off. Changes apply from the next drive.")
         }
     }
 

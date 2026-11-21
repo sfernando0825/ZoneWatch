@@ -16,7 +16,7 @@ final class AudioAlerts {
         var text: String {
             switch self {
             case .speedCamera: "Speed camera ahead"
-            case .mobileCamera: "Mobile camera ahead"
+            case .mobileCamera: "Mobile camera site ahead"
             case .phoneCamera: "Phone camera ahead"
             case .phoneAndSeatbeltCamera: "Phone and seatbelt camera ahead"
             case .redLightCamera: "Red light camera ahead"
@@ -32,13 +32,13 @@ final class AudioAlerts {
             case .phoneCamera: .phoneCamera
             case .phoneAndSeatbeltCamera: .phoneAndSeatbeltCamera
             case .redLightSpeed: .redLightCamera
-            case .pointToPointStart: .averageSpeedZone
+            case .pointToPointStart, .averageSpeedSection: .averageSpeedZone
             }
         }
     }
 
     /// Bump when prompt wording or the chime changes, so saved files are made again.
-    private static let promptVersion = 1
+    private static let promptVersion = 2
 
     private(set) var preparedCount = 0
     private(set) var lastError: String?
@@ -51,6 +51,7 @@ final class AudioAlerts {
 
     /// Makes any missing prompt files. Run in the foreground at launch.
     func prepare() async {
+        removeOldPromptFiles()
         var ready = 0
         for prompt in Prompt.allCases {
             let url = Self.url(for: prompt)
@@ -95,6 +96,15 @@ final class AudioAlerts {
             guard !Task.isCancelled else { return }
             player = nil
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+    }
+
+    private func removeOldPromptFiles() {
+        let folder = Self.url(for: .test).deletingLastPathComponent()
+        let current = Set(Prompt.allCases.map { Self.url(for: $0).lastPathComponent })
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        for name in files where !current.contains(name) {
+            try? FileManager.default.removeItem(at: folder.appending(path: name))
         }
     }
 

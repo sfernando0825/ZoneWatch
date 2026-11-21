@@ -4,6 +4,8 @@ public enum CameraType: String, Codable, Hashable, Sendable, CaseIterable {
     case redLightSpeed
     case pointToPointStart
     case pointToPointEnd
+    /// A whole average speed section, enforced in the direction its path is drawn.
+    case averageSpeedSection
     case mobileSpeed
     /// SA sites are labelled phone cameras until seatbelt enforcement is confirmed.
     case phoneCamera
@@ -14,11 +16,20 @@ public enum CameraType: String, Codable, Hashable, Sendable, CaseIterable {
         switch self {
         case .fixedSpeed: "Speed camera"
         case .redLightSpeed: "Red light camera"
-        case .pointToPointStart: "Average speed zone"
+        case .pointToPointStart, .averageSpeedSection: "Average speed zone"
         case .pointToPointEnd: "Average speed zone ends"
         case .mobileSpeed: "Mobile camera"
         case .phoneCamera: "Phone camera"
         case .phoneAndSeatbeltCamera: "Phone and seatbelt camera"
+        }
+    }
+
+    /// Shown while driving inside a stretch of road where this kind of camera operates.
+    public var zoneName: String {
+        switch self {
+        case .pointToPointStart, .pointToPointEnd, .averageSpeedSection: "Average speed zone"
+        case .mobileSpeed: "Mobile camera site"
+        default: "\(displayName) zone"
         }
     }
 }
